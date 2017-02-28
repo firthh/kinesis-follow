@@ -19,6 +19,7 @@ Usage of kinesis-follow:
 
 Assuming you have golang installed and setup correctly:
 ```
+go get github.com/uswitch/kinesis-follow
 go install github.com/uswitch/kinesis-follow
 ```
 
