@@ -52,9 +52,9 @@ func getRecords(svc *kinesis.Kinesis, shardIterator string) (kinesis.GetRecordsO
 	return *resp, nil
 }
 
-func followShard(svc *kinesis.Kinesis, shardIterator string) {
+func followShard(svc *kinesis.Kinesis, sleepBetweenPolling int, shardIterator string) {
 	for true {
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(time.Duration(sleepBetweenPolling) * time.Millisecond)
 		getRecordsOut, err3 := getRecords(svc, shardIterator)
 		if err3 != nil {
 			fmt.Println(err3.Error())
@@ -71,6 +71,7 @@ func followShard(svc *kinesis.Kinesis, shardIterator string) {
 func main() {
 	streamName := flag.String("stream", "", "Name of the string you want to follow")
 	region := flag.String("region", "eu-west-1", "AWS region the stream exists in")
+	sleepBetweenPolling := flag.Int("sleep", 1000, "How long to sleep between polling for new messages in ms")
 
 	flag.Parse()
 
@@ -94,7 +95,7 @@ func main() {
 			fmt.Println(err2.Error())
 			return
 		}
-		go followShard(svc, shardIterator)
+		go followShard(svc, *sleepBetweenPolling, shardIterator)
 	}
 
 	var input string
