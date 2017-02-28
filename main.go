@@ -52,27 +52,7 @@ func getRecords(svc *kinesis.Kinesis, shardIterator string) (kinesis.GetRecordsO
 	return *resp, nil
 }
 
-func main() {
-	streamName := "banking-clicks-production"
-
-	sess := session.New(&aws.Config{Region: aws.String("eu-west-1")})
-	svc := kinesis.New(sess)
-
-	stream, err := getStreamDescription(svc, streamName)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	fmt.Println(*stream.Shards[0].ShardId)
-
-	shardIterator, err2 := getShardIterator(svc, streamName, *stream.Shards[0].ShardId)
-
-	if err2 != nil {
-		fmt.Println(err2.Error())
-		return
-	}
-	// Pretty-print the response data.
-	fmt.Println(shardIterator)
+func followShard(svc *kinesis.Kinesis, shardIterator string) {
 
 	for true {
 		time.Sleep(1000 * time.Millisecond)
@@ -88,4 +68,31 @@ func main() {
 		}
 
 	}
+
+}
+
+func main() {
+	streamName := "banking-clicks-production"
+
+	sess := session.New(&aws.Config{Region: aws.String("eu-west-1")})
+	svc := kinesis.New(sess)
+
+	stream, err := getStreamDescription(svc, streamName)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	for _, shard := range stream.Shards {
+		shardIterator, err2 := getShardIterator(svc, streamName, *shard.ShardId)
+		if err2 != nil {
+			fmt.Println(err2.Error())
+			return
+		}
+		go followShard(svc, shardIterator)
+	}
+
+	var input string
+	fmt.Scanln(&input)
+
 }
