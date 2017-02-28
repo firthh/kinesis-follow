@@ -1,7 +1,7 @@
 package main
 
 import (
-	// "bytes"
+	"flag"
 	"fmt"
 	"time"
 
@@ -53,7 +53,6 @@ func getRecords(svc *kinesis.Kinesis, shardIterator string) (kinesis.GetRecordsO
 }
 
 func followShard(svc *kinesis.Kinesis, shardIterator string) {
-
 	for true {
 		time.Sleep(1000 * time.Millisecond)
 		getRecordsOut, err3 := getRecords(svc, shardIterator)
@@ -66,25 +65,31 @@ func followShard(svc *kinesis.Kinesis, shardIterator string) {
 			s := string(el.Data[:])
 			fmt.Println(s)
 		}
-
 	}
-
 }
 
 func main() {
-	streamName := "banking-clicks-production"
+	streamName := flag.String("stream", "", "Name of the string you want to follow")
+	region := flag.String("region", "eu-west-1", "AWS region the stream exists in")
 
-	sess := session.New(&aws.Config{Region: aws.String("eu-west-1")})
+	flag.Parse()
+
+	if *streamName == "" {
+		fmt.Println("Must provide and argument stream")
+		return
+	}
+
+	sess := session.New(&aws.Config{Region: aws.String(*region)})
 	svc := kinesis.New(sess)
 
-	stream, err := getStreamDescription(svc, streamName)
+	stream, err := getStreamDescription(svc, *streamName)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
 
 	for _, shard := range stream.Shards {
-		shardIterator, err2 := getShardIterator(svc, streamName, *shard.ShardId)
+		shardIterator, err2 := getShardIterator(svc, *streamName, *shard.ShardId)
 		if err2 != nil {
 			fmt.Println(err2.Error())
 			return
@@ -94,5 +99,4 @@ func main() {
 
 	var input string
 	fmt.Scanln(&input)
-
 }
