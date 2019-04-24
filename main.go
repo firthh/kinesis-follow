@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	"bytes"
+	"compress/gzip"
+	"crypto/tls"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"io"
+
+	"net/http"
 )
 
 func getStreamDescription(svc *kinesis.Kinesis, name string) (kinesis.StreamDescription, error) {
@@ -52,18 +58,48 @@ func getRecords(svc *kinesis.Kinesis, shardIterator string) (kinesis.GetRecordsO
 	return *resp, nil
 }
 
-func followShard(svc *kinesis.Kinesis, sleepBetweenPolling int, shardIterator string) {
+func gUnzipData(data []byte) (resData []byte, err error) {
+	b := bytes.NewBuffer(data)
+
+	var r io.Reader
+	r, err = gzip.NewReader(b)
+	if err != nil {
+		return
+	}
+
+	var resB bytes.Buffer
+	_, err = resB.ReadFrom(r)
+	if err != nil {
+		return
+	}
+
+	resData = resB.Bytes()
+
+	return
+}
+
+func followShard(svc *kinesis.Kinesis, sleepBetweenPolling int, shardIterator string, unzipData bool) {
 	for true {
 		time.Sleep(time.Duration(sleepBetweenPolling) * time.Millisecond)
-		getRecordsOut, err3 := getRecords(svc, shardIterator)
-		if err3 != nil {
-			fmt.Println(err3.Error())
+		getRecordsOut, err := getRecords(svc, shardIterator)
+		if err != nil {
+			fmt.Println(err.Error())
 			return
 		}
 		shardIterator = *getRecordsOut.NextShardIterator
 		for _, el := range getRecordsOut.Records {
-			s := string(el.Data[:])
-			fmt.Println(s)
+			if unzipData {
+				unzippedBytes, err := gUnzipData(el.Data)
+				if err != nil {
+					fmt.Println(err.Error())
+					return
+				}
+				s := string(unzippedBytes)
+				fmt.Println(s)
+			} else {
+				s := string(el.Data)
+				fmt.Println(s)
+			}
 		}
 	}
 }
@@ -71,7 +107,10 @@ func followShard(svc *kinesis.Kinesis, sleepBetweenPolling int, shardIterator st
 func main() {
 	streamName := flag.String("stream", "", "Name of the string you want to follow")
 	region := flag.String("region", "eu-west-1", "AWS region the stream exists in")
+	endpoint := flag.String("endpoint", "", "AWS endpoint (useful with localstack)")
 	sleepBetweenPolling := flag.Int("sleep", 1000, "How long to sleep between polling for new messages in ms")
+	noVerifySSL := flag.Bool("no-verify-ssl", false, "No SSL certificate validation")
+	unzipData := flag.Bool("unzip-data", false, "Do you want to unzip the data bytes read from Kinesis")
 
 	flag.Parse()
 
@@ -80,7 +119,13 @@ func main() {
 		return
 	}
 
-	sess := session.New(&aws.Config{Region: aws.String(*region)})
+	if *noVerifySSL {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	sess := session.New(&aws.Config{
+		Region:   aws.String(*region),
+		Endpoint: aws.String(*endpoint),
+	})
 	svc := kinesis.New(sess)
 
 	stream, err := getStreamDescription(svc, *streamName)
@@ -95,7 +140,7 @@ func main() {
 			fmt.Println(err2.Error())
 			return
 		}
-		go followShard(svc, *sleepBetweenPolling, shardIterator)
+		go followShard(svc, *sleepBetweenPolling, shardIterator, *unzipData)
 	}
 
 	var input string
